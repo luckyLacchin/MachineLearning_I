@@ -5,6 +5,7 @@ import time
 import random
 from numpy.random import default_rng
 from tqdm import tqdm
+
 from collections import OrderedDict
 
 from helper_functions import get_radius, gen_lin_sep_dataset, inner_prod
@@ -26,28 +27,36 @@ class MCPNeuron:
         :return: The output in the interval [-1,1]
         """
         # <START Your code here>
-        y = np.inner(self.w, x) - self.threshold
-        return np.sign(y)
+        weighted_sum = inner_prod(self.w, x, use_numpy=True) - self.threshold
+        y = np.sign(weighted_sum)
+        if y == 0:
+            y = 1
+        return y
         # <END Your code here>
-        # return 0 # TODO: Overwrite this with your code
 
     # P.2.3 - Implement a function to randomize the weights and the threshold
     def set_random_params(self):
         # <START Your code here>
-        self.w = np.random.uniform(-1, 1, len(self.w))
-        self.threshold = np.random.uniform(-1, 1)
+        self.w = np.random.random(self.w.shape)
+        self.w *= 2
+        self.w -= 1
+        self.threshold = np.random.random(1)[0]
+        self.threshold *= 2
+        self.threshold -= 1
         # <END Your code here>
 
 
     # P.2.4 - Implement a function to check whether the MCP neuron represents a specific Boolean Function
     def is_bf(self, bf):
         fail = False
+        # <START Your code here>
         for x in bf.keys():
             y = bf[x]
             pred = self.forward(x)
             if y != pred:
                 fail = True
                 break
+        # <END Your code here>
         return not fail
 
 
@@ -60,31 +69,46 @@ def generate_boolean_functions(dim, max_samples=0):
     For example, for dim=2, there can only be 16 Boolean functions.
     :return: The functions to return as dictionaries, where keys are tuples of inputs and values are outputs.
     """
-    #bf = []
     # <START Your Code Here>
-    bf = {}
+    bf = []
+    def gen_binary_permutations(n, max_samples=0):
+        perm = []
+        n_samples = min(len(np.arange(2 ** n, 2 ** (n + 1))), max_samples)
+        if n_samples > 0:
+            rng = default_rng()
+            if n < 5:
+                numbers = rng.choice(np.arange(2 ** n, 2 ** (n + 1)), replace=False, size=n_samples)
+            else:
+                number_range = 2 ** (n + 1) - 2 ** n
+                numbers = np.random.random(size=n_samples)
+                numbers *= number_range
+                numbers += 2 ** n
+                numbers = numbers.astype(np.int64)
+        else:
+            numbers = range(2 ** n, 2 ** (n + 1))
+        for i in numbers:
+            bin_str = bin(i)[3:]
+            bin_list = [int(bin_str[i]) for i in range(len(bin_str))]
+            perm.append(bin_list)
+        perm = np.array(perm)
+        perm *= 2
+        perm -=1
+        return perm
 
-    # Generate all combinations of inputs
-    input_combinations = generate_random_list(dim)
-
-    # Generate random output for each input combination
-    for inputs in input_combinations:
-        output = random.choice([-1, 1])  # Randomly choose either -1 or 1
-        bf[tuple(inputs)] = output
+    in_data = gen_binary_permutations(dim)
+    # print(in_data)
+    out_data = gen_binary_permutations(len(in_data), max_samples=max_samples)
+    # print(out_data)
+    n_bool_func = len(out_data)
+    print(f"Number of Boolean functions for dim={dim}: {n_bool_func}")
+    for y in out_data:
+        this_f = OrderedDict()
+        for i, x in enumerate(in_data):
+            this_f[tuple(x)] = y[i]
+        bf.append(this_f)
     # <END Your Code Here>
     return bf
 
-def generate_random_list (dim):
-    if dim == 1:
-        return [[-1], [1]]
-    else:
-        smaller_combinations = generate_random_list(dim - 1)
-        combinations = []
-        for combination in smaller_combinations:
-            combinations.append(combination + [-1])
-            combinations.append(combination + [1])
-        return combinations
-#i didn't use the hint given about "the index 14 in binary is 1110", in that case i would have used the formula
 if __name__ == '__main__':
     # P.2.1 - Test the forward function
     mcp_1 = MCPNeuron(1)
@@ -102,30 +126,6 @@ if __name__ == '__main__':
     mcp_3.threshold = 1
     mcp_3.forward([-1, 1, -1])
 
-    #P.2.2.
-    # Test the function by sampling 200 random functions for dim=2 and dim=3
-    dim = 2
-    num_samples = 200
-    sampled_functions_dim_2 = generate_boolean_functions(dim, num_samples)
-
-    dim = 3
-    sampled_functions_dim_3 = generate_boolean_functions(dim, num_samples)
-
-    # Print the first few sampled functions for each dimension
-    print("Sampled Boolean Functions for Dimension 2:")
-    for i, function in enumerate(sampled_functions_dim_2):
-        print(f"Function {i + 1}: {function}")
-
-    print("\nSampled Boolean Functions for Dimension 3:")
-    for i, function in enumerate(sampled_functions_dim_3):
-        print(f"Function {i + 1}: {function}")
-
-    #P2.3
-    mcp_debug = MCPNeuron(3)
-    mcp_debug.set_random_params();
-    print(f"2.3 weights: {mcp_debug.w}")
-    print(f"2.3 threshold: {mcp_debug.threshold}")
-
     # P.2.4 - Test your is_bf function
     bf_1 = ({(-1, -1): -1, (-1, 1): -1, (1,-1): -1, (1, 1): 1})
     bf_2 = ({(-1, -1): 1, (-1, 1): 1, (1, -1): -1, (1, 1): 1})
@@ -134,68 +134,71 @@ if __name__ == '__main__':
     #  That is, for all four inputs the output must be correct.
     mcp_1.w = np.array([1,1])
     mcp_1.threshold = 1
-    for k in bf_1.keys():
-        out = mcp_1.forward(k)
-        if out == bf_1[k]:
-            print("Correct!")
-        else:
-            print("Incorrect")
+    correct = mcp_1.is_bf(bf_1)
+    print(f"mcp_1 represents bf_1: {correct}")
 
     mcp_2 = MCPNeuron(2)
     # TODO: For P.2.4: Replace the weights and the threshold provided here such that mcp_2 represents bf_2
     #  That is, for all four inputs the output must be correct.
-    mcp_2.w = np.array([-1,1])
-    mcp_2.threshold = -1
-    for k in bf_2.keys():
-        out = mcp_2.forward(k)
-        if out == bf_2[k]:
-            print("Correct!")
-        else:
-            print("Incorrect")
-#primo e terzo
-    print(mcp_1.is_bf(bf_1))
-    print(mcp_2.is_bf(bf_2))
+    mcp_2.w = np.array([-1, 1])
+    mcp_1.threshold = 0
+    correct = mcp_2.is_bf(bf_2)
+    print(f"mcp_2 represents bf_2: {correct}")
 
     # P2.5 - Implement an evaluation script to estimate how many Boolean functions can be approximated with a MCP neuron.
-    n_inputs_to_test = range(1,5)
-    succ_rates = []
-    for i in n_inputs_to_test:
-        successes = 0
-        bf = generate_boolean_functions(i,200)
-        mcp_neurons = MCPNeuron(i)
-        for _ in range(5000):
-            mcp_neurons.set_random_params()
-            print(mcp_neurons.is_bf(bf))
-            if mcp_neurons.is_bf(bf):
-                successes += 1
-        success_rate = successes/ 5000
-        succ_rates.append(success_rate)
-    #this is incorrect, i should have done succ_rates[dim] = successes/len(fun), fun = len(bf), to change it
+    n_inputs_to_test = range(3,5)
+
     # TODO: Overwrite this succ_rates list. This list should contain, for each number of inputs,
     #  the fraction of linear threshold functions, i.e., the number of Boolean functions that can be approximated
     #  with a MCP neuron. For comparison, the numbers provided in the lecture are given in the succ_rates_lecture list.
-    #succ_rates = [0] * len(n_inputs_to_test)
-    print(succ_rates)
+    succ_rates = [0] * len(n_inputs_to_test)
     succ_rates_lecture = [1, 0.88, 0.5, 0.06][:len(n_inputs_to_test)]
     # <START Your Code Here>
-    #The values given in the lecture are upper bound, that's why we don't obtain the specific values!
+    max_samples_to_test = 300
+    max_guesses = 5000
+    data = {}
+    for n_inputs in n_inputs_to_test:
+        data[n_inputs] = {}
+        max_samples = max_samples_to_test
+        data[n_inputs] = {"all_data": [], "successes": 0, "avg_guesses_if_succ": 0, "succ_rate": 0}
+        bf = generate_boolean_functions(n_inputs, max_samples=max_samples)
+
+        for func in tqdm(bf):
+            mcp = MCPNeuron(n_inputs)
+            n_guesses = 0
+            while n_guesses < max_guesses:
+                mcp.set_random_params()
+                is_bf = mcp.is_bf(func)
+                n_guesses += 1
+                if is_bf:
+                    break
+            success = n_guesses < max_guesses
+            result = {"bf": bf, "n_guesses": n_guesses, "success": success}
+            data[n_inputs]["all_data"].append(result)
+            data[n_inputs]["successes"] += success
+            data[n_inputs]["avg_guesses_if_succ"] += (n_guesses * success)
+
+        if data[n_inputs]["successes"] > 0:
+            data[n_inputs]["avg_guesses_if_succ"] /= data[n_inputs]["successes"]
+        else:
+            data[n_inputs]["avg_guesses_if_succ"] = 0
+        data[n_inputs]["succ_rate"] = data[n_inputs]["successes"] / len(data[n_inputs]["all_data"])
+
+    succ_rates = [data[n_inputs]["succ_rate"] for n_inputs in n_inputs_to_test]
+    avg_guesses = [data[n_inputs]["avg_guesses_if_succ"] for n_inputs in n_inputs_to_test]
     # <END Your Code Here>
 
     # Plot the approximation success rates from your experiments and from the lecture
     fig, ax = plt.subplots(figsize=(10, 10))
-    plt.plot(n_inputs_to_test, succ_rates, label='Estimated Success Rate')
-    plt.plot(n_inputs_to_test, succ_rates_lecture, label = "Lecture Success Rate")
-    plt.xlabel('Number of Inputs')
-    plt.ylabel('Success Rate')
-    plt.legend()
-    plt.show()
-    #plt.savefig('approx.png')
+    plt.plot(n_inputs_to_test, succ_rates)
+    plt.plot(n_inputs_to_test, succ_rates_lecture)
+    plt.savefig('approx.png')
 
     # Not part of the exercise but interesting: Plot how many guesses were required to find a MCP parameterization.
-    # fig, ax = plt.subplots(figsize=(10, 10))
-    # plt.plot(n_inputs_to_test, avg_guesses)
-    # # plt.show()
-    # plt.savefig('guesses.png')
-    # print("Done")
+    fig, ax = plt.subplots(figsize=(10, 10))
+    plt.plot(n_inputs_to_test, avg_guesses)
+    # plt.show()
+    plt.savefig('guesses.png')
+    print("Done")
 
 
